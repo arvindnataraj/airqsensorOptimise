@@ -118,7 +118,7 @@ ADI_ADC_RESULT adcResult;
 //#define LED_3         ADI_GPIO_PORT0, ADI_GPIO_PIN_13
 #define LED3         ADI_GPIO_PORT0, ADI_GPIO_PIN_4 //intentionally mapped to P0.4 which is NOT lED on custom board as wanted to free up P0.3 for DBG_ST8_PIN.
 #define LED4         ADI_GPIO_PORT1, ADI_GPIO_PIN_12
-
+#define LED5         ADI_GPIO_PORT1, ADI_GPIO_PIN_13
 //#define EN_5V         ADI_GPIO_PORT1, ADI_GPIO_PIN_14
 
 /*EZKIT*/
@@ -171,7 +171,7 @@ static void usleep(uint32_t usec);
 
 int NUM_FAN_500MS_CYCLES = 0;
 
-int tmp=0,k=0;
+int tmp=0,k=0,start=0;
 
 ADI_PWR_RESULT pwrResult;
 bool_t flagHib = false;                                        // flag for hibernate mode
@@ -183,6 +183,7 @@ int main(void)
     /* Clock initialization */
     SystemInit();
 
+    
     /* test system initialization */
     test_Init();
         //adi_gpio_OutputEnable(EN_5V, true);
@@ -194,7 +195,7 @@ int main(void)
     {
       if(ADI_PWR_SUCCESS != adi_pwr_Init())
         {
-          DEBUG_MESSAGE("Failed to intialize the power service\n");
+          //DEBUG_MESSAGE("Failed to intialize the power service\n");
           break;
         }
       
@@ -221,30 +222,31 @@ int main(void)
    
       if (ADI_PWR_SUCCESS != adi_pwr_SetClockDivider(ADI_CLOCK_HCLK,1))
       {
-          DEBUG_MESSAGE("Failed to intialize the power service\n");
+          //DEBUG_MESSAGE("Failed to intialize the power service\n");
       }
       if (ADI_PWR_SUCCESS != adi_pwr_SetClockDivider(ADI_CLOCK_PCLK,1))
       {
-          DEBUG_MESSAGE("Failed to intialize the power service\n");
+          //DEBUG_MESSAGE("Failed to intialize the power service\n");
       }
 
   
       if(ADI_RTC_SUCCESS !=rtc_Init())
         {
-          DEBUG_MESSAGE("\nFailed to initialize RTC device \n");
+          //DEBUG_MESSAGE("\nFailed to initialize RTC device \n");
         }
       
 
       
       if(ADI_GPIO_SUCCESS != adi_gpio_Init(gpioMemory, ADI_GPIO_MEMORY_SIZE))
         {
-            DEBUG_MESSAGE("adi_gpio_Init failed\n");
+           // DEBUG_MESSAGE("adi_gpio_Init failed\n");
             break;
         }
       //P0.13 --> LED3
       adi_gpio_OutputEnable(LED3, true);
       //P1.12 --> LED4 
       adi_gpio_OutputEnable(LED4, true);
+      adi_gpio_OutputEnable(LED5, true);
       adi_gpio_OutputEnable(CO_HEATER, true);
       adi_gpio_OutputEnable(CO_SENSE, true);
       adi_gpio_OutputEnable(PM25_LED, true);
@@ -258,7 +260,7 @@ int main(void)
       adi_gpio_SetLow(PM25_FAN);
       adi_gpio_SetLow(DBG_ADC_PIN);   
       adi_gpio_SetHigh(LED3);
-      adi_gpio_SetHigh(LED4);
+      //adi_gpio_SetHigh(LED4);
       
       ADC_Setup();
       
@@ -268,7 +270,7 @@ int main(void)
       adi_tmr_SetPrescaler(hDevice1, ADI_GPT_PRESCALER_256);
       adi_tmr_SetLoadValue( hDevice1, GPT1_LOAD_1SEC);
      
-      DEBUG_MESSAGE("AQ Sensor initializing!\n");    
+      //DEBUG_MESSAGE("AQ Sensor initializing!\n");    
         
     }while(0);
     
@@ -276,17 +278,28 @@ Hibernate :
   if(k==1)
   {
     adcResult = adi_adc_Enable (hDevice, false);    //ADC must be disabled before entering hibernate mode
-    DEBUG_RESULT("Failed to disable ADC", adcResult, ADI_ADC_SUCCESS);
+   // DEBUG_RESULT("Failed to disable ADC", adcResult, ADI_ADC_SUCCESS);
+    
+    /* DEBUG MSG DISPLAYED */
+   // adcResult = adi_adc_EnableADCSubSystem (hDevice, false);
+ //   DEBUG_RESULT("Failed to disable ADC sub system", adcResult, ADI_ADC_SUCCESS);
+    
+    /* GETS STUCK IN WEAK BUS HANDLER IN startup.c */
+    //adcResult = adi_adc_PowerUp (hDevice, false);   //ADC powered down before hibernate
+    //DEBUG_RESULT("Failed to power down ADC", adcResult, ADI_ADC_SUCCESS);
     
     pwrResult = adi_pwr_EnterLowPowerMode(ADI_PWR_MODE_HIBERNATE,&flagHib,0x00);  //Entering hibernate mode
-    DEBUG_RESULT("\n Failed to enter hibernate %04d",pwrResult,ADI_PWR_SUCCESS);
+    //DEBUG_RESULT("\n Failed to enter hibernate %04d",pwrResult,ADI_PWR_SUCCESS);
   }
-    do
-    {
-      if(k==1)
-        goto Hibernate;
-     }
-    while(1);
+  do
+  {
+    if(k==1)
+     {
+      k = 0;
+      goto Hibernate;// Once one cycle of measurements completes - jumps to label 'Hibernate' to switch to hibernate mode till next RTC alarm
+     } 
+   }
+   while(1);
     
     
  
@@ -295,26 +308,33 @@ Hibernate :
 /*This callback initializes the GPT1 timer, which controls the sensor st8-mc.*/
 void rtc0Callback (void *pCBParam, uint32_t nEvent, void *EventArg) {
 
+    adi_gpio_Toggle(ADI_GPIO_PORT1, ADI_GPIO_PIN_12);  
+  
   /* flagHib is set to 'true' in adi_pwr_ExitLowPowerMode() to exit hibernate mode */
     pwrResult = adi_pwr_ExitLowPowerMode(&flagHib);              
-    DEBUG_RESULT("\n Failed to exit hibernate %04d",pwrResult,ADI_PWR_SUCCESS);
+    //DEBUG_RESULT("\n Failed to exit hibernate %04d",pwrResult,ADI_PWR_SUCCESS);
     
+     
   /* Components of ADC are powered down in hibernate mode - so must be explicitly powered up after waking up*/
     if(pwrResult==ADI_PWR_SUCCESS)
     {
      k = 0;
-     
-    /* Power up ADC */
+     if(start!=0)
+     {
+       /* Power up ADC */
     adcResult = adi_adc_PowerUp (hDevice, true);
-    DEBUG_RESULT("Failed to power up ADC", adcResult, ADI_ADC_SUCCESS);
+   // DEBUG_RESULT("Failed to power up ADC", adcResult, ADI_ADC_SUCCESS);
+    
+    //adcResult = adi_adc_SetVrefSource (hDevice, ADI_ADC_VREF_SRC_INT_2_50_V);
      
     adcResult = adi_adc_Enable (hDevice, true);
+     }
     }
     bRtcInterrupt = true;
 
    if (ADI_RTC_ALARM_INT & nEvent) 
     {
-        DEBUG_MESSAGE("RTC interrupt");
+       // DEBUG_MESSAGE("RTC interrupt");
         
 	/*Initialize st8-mc variables*/
 	curr_state           = 0;
@@ -333,7 +353,7 @@ void rtc0Callback (void *pCBParam, uint32_t nEvent, void *EventArg) {
         adi_tmr_SetLoadValue( hDevice1, GPT1_LOAD_500MSEC);
         adi_tmr_Enable(hDevice1, true);
     }
-
+  start=1;
 }
 
 /**
@@ -362,7 +382,7 @@ static void GPTimer1Callback(void *pCBParam, uint32_t Event, void *pArg)
                curr_state = 10;//go to PM2.5 sensor - begin by turning on the fan [st8 10]
                cnt_samples = 0;
                adi_gpio_SetHigh(LED3);
-               adi_gpio_SetHigh(LED4);
+               //adi_gpio_SetHigh(LED4);
                
 	       adi_gpio_SetLow(CO_HEATER);
                adi_gpio_SetLow(CO_SENSE);
@@ -419,8 +439,10 @@ static void GPTimer1Callback(void *pCBParam, uint32_t Event, void *pArg)
              adcResult = adi_adc_SubmitBuffer (hDevice, &Buffer);
              adi_gpio_Toggle(DBG_ST8_PIN);
              adi_gpio_SetHigh(DBG_ADC_PIN);
-             adi_gpio_SetLow(LED4);
-                          
+             //adi_gpio_SetLow(LED4);
+             
+                                         
+             
              curr_state = 3;
              adi_tmr_SetLoadValue( hDevice1, GPT1_LOAD_2p5MSEC);
              adi_tmr_Enable(hDevice1,true);                         
@@ -466,7 +488,7 @@ static void GPTimer1Callback(void *pCBParam, uint32_t Event, void *pArg)
              {
                adi_tmr_Enable(hDevice1, false);
                adi_gpio_SetHigh(LED3);
-               adi_gpio_SetHigh(LED4);
+               //adi_gpio_SetHigh(LED4);
                adi_gpio_SetLow(PM25_LED);
                adi_gpio_SetLow(PM25_FAN);
                k=1;
@@ -487,7 +509,7 @@ static void GPTimer1Callback(void *pCBParam, uint32_t Event, void *pArg)
 	
 	/*st8 5: PM2.5 sensor - trigger ADC sampling on channel-3 */	
         case 5 :
-             adi_gpio_SetLow(LED4);
+             //adi_gpio_SetLow(LED4);
              /* Populate the buffer structure */
              Buffer.nBuffSize = sizeof(ADC_DataBuffer);
              Buffer.nChannels = ADI_ADC_CHANNEL_2;                                             
@@ -498,6 +520,8 @@ static void GPTimer1Callback(void *pCBParam, uint32_t Event, void *pArg)
              adcResult = adi_adc_SubmitBuffer (hDevice, &Buffer);
              adi_gpio_Toggle(DBG_ST8_PIN);
              adi_gpio_SetHigh(DBG_ADC_PIN);
+             
+                                             adi_gpio_Toggle(LED5);        //LED 5 - Toggle
              
 	     curr_state = 6;  
              adi_tmr_SetLoadValue( hDevice1, GPT1_LOAD_0p04MSEC); 
@@ -538,11 +562,11 @@ static void ADCCallback(void *pCBParam, uint32_t Event, void *pArg)
     switch (Event)
     {
     case ADI_ADC_EVENT_BUFFER_PROCESSED:
-             adi_gpio_SetHigh(LED4);
+             //adi_gpio_SetHigh(LED4);
              adi_gpio_SetLow(DBG_ADC_PIN);
              tmp=0;
              do{   
-             DEBUG_MESSAGE("%d,%d\n",cnt_samples,ADC_DataBuffer[tmp]);
+             //DEBUG_MESSAGE("%d,%d\n",cnt_samples,ADC_DataBuffer[tmp]);
              tmp++;
              }while(tmp<4);
              cnt_samples++;
@@ -562,7 +586,7 @@ void ADC_Setup(void)
     
     /* Open the ADC device */
     adcResult = adi_adc_Open(ADC_DEV_NUM, DeviceMemory, sizeof(DeviceMemory), &hDevice);
-    DEBUG_RESULT("Failed to open ADC device",adcResult, ADI_ADC_SUCCESS);
+   // DEBUG_RESULT("Failed to open ADC device",adcResult, ADI_ADC_SUCCESS);
 
 //#ifdef ADC_ENABLE_CALLBACK
     /* Register Callback */
@@ -571,38 +595,38 @@ void ADC_Setup(void)
 
     /* Power up ADC */
     adcResult = adi_adc_PowerUp (hDevice, true);
-    DEBUG_RESULT("Failed to power up ADC", adcResult, ADI_ADC_SUCCESS);
+   // DEBUG_RESULT("Failed to power up ADC", adcResult, ADI_ADC_SUCCESS);
 
     /* Set ADC reference */
     adcResult = adi_adc_SetVrefSource (hDevice, ADI_ADC_VREF_SRC_INT_2_50_V);
     //adcResult = adi_adc_SetVrefSource (hDevice, ADI_ADC_VREF_SRC_EXT);   
-    DEBUG_RESULT("Failed to set ADC reference", adcResult, ADI_ADC_SUCCESS);
+    //DEBUG_RESULT("Failed to set ADC reference", adcResult, ADI_ADC_SUCCESS);
 
     /* Enable ADC sub system */
     adcResult = adi_adc_EnableADCSubSystem (hDevice, true);
-    DEBUG_RESULT("Failed to enable ADC sub system", adcResult, ADI_ADC_SUCCESS);
+  //  DEBUG_RESULT("Failed to enable ADC sub system", adcResult, ADI_ADC_SUCCESS);
 
     /* Wait for 5.0ms */
     usleep (5000);
     
     /* Start calibration */
     adcResult = adi_adc_StartCalibration (hDevice);
-    DEBUG_RESULT("Failed to start calibration", adcResult, ADI_ADC_SUCCESS);
+   // DEBUG_RESULT("Failed to start calibration", adcResult, ADI_ADC_SUCCESS);
 
     /* Wait until calibration is done */
     while (!bCalibrationDone)
     {
         adcResult = adi_adc_IsCalibrationDone (hDevice, &bCalibrationDone);
-        DEBUG_RESULT("Failed to get the calibration status", adcResult, ADI_ADC_SUCCESS);
+       // DEBUG_RESULT("Failed to get the calibration status", adcResult, ADI_ADC_SUCCESS);
     }	
     
     /* Set the delay time */
     adcResult = adi_adc_SetDelayTime ( hDevice, 0);
-    DEBUG_RESULT("Failed to set the Delay time ", adcResult, ADI_ADC_SUCCESS);
+    //DEBUG_RESULT("Failed to set the Delay time ", adcResult, ADI_ADC_SUCCESS);
 
     /* Set the acquisition time. (Application need to change it based on the impedence) */
     adcResult = adi_adc_SetAcquisitionTime ( hDevice, 10);
-    DEBUG_RESULT("Failed to set the acquisition time ", adcResult, ADI_ADC_SUCCESS);	
+    //DEBUG_RESULT("Failed to set the acquisition time ", adcResult, ADI_ADC_SUCCESS);	
 
     /* Populate the buffer structure */
     Buffer.nBuffSize = sizeof(ADC_DataBuffer);
@@ -615,7 +639,7 @@ void ADC_Setup(void)
     
     adi_gpio_SetHigh(DBG_ADC_PIN);
     adcResult = adi_adc_SubmitBuffer (hDevice, &Buffer);
-    DEBUG_RESULT("Failed to submit buffer ", adcResult, ADI_ADC_SUCCESS);
+    //DEBUG_RESULT("Failed to submit buffer ", adcResult, ADI_ADC_SUCCESS);
     
 
 
@@ -645,34 +669,34 @@ ADI_RTC_RESULT rtc_Init (void) {
     do
     {
         eResult = adi_rtc_Open(RTC_DEVICE_NUM,aRtcDevMem0,ADI_RTC_MEMORY_SIZE,&hDeviceRTC);
-        DEBUG_RESULT("\n Failed to open the device %04d",eResult,ADI_RTC_SUCCESS);
+       // DEBUG_RESULT("\n Failed to open the device %04d",eResult,ADI_RTC_SUCCESS);
         
         eResult = adi_rtc_RegisterCallback(hDeviceRTC,rtc0Callback,hDeviceRTC);
-        DEBUG_RESULT("\n Failed to open the device",eResult,ADI_RTC_SUCCESS);
+       // DEBUG_RESULT("\n Failed to open the device",eResult,ADI_RTC_SUCCESS);
         
         
         eResult = adi_rtc_SetTrim(hDeviceRTC,ADI_RTC_TRIM_INTERVAL,ADI_RTC_TRIM_VALUE,ADI_RTC_TRIM_DIRECTION);
-        DEBUG_RESULT("Failed to set the trim value",eResult,ADI_RTC_SUCCESS);
+       // DEBUG_RESULT("Failed to set the trim value",eResult,ADI_RTC_SUCCESS);
         
         eResult = adi_rtc_EnableTrim(hDeviceRTC,true);
-        DEBUG_RESULT("Failed to enable the trim",eResult,ADI_RTC_SUCCESS);
+       // DEBUG_RESULT("Failed to enable the trim",eResult,ADI_RTC_SUCCESS);
         
         eResult = adi_rtc_EnableAlarm(hDeviceRTC,true);
-        DEBUG_RESULT("Failed to enable the alram ",eResult,ADI_RTC_SUCCESS);
+        //DEBUG_RESULT("Failed to enable the alram ",eResult,ADI_RTC_SUCCESS);
         
         eResult = adi_rtc_EnableInterrupts(hDeviceRTC, nInterrupts,true);
-        DEBUG_RESULT("Failed to enable the specified interrupts",eResult,ADI_RTC_SUCCESS);
+       // DEBUG_RESULT("Failed to enable the specified interrupts",eResult,ADI_RTC_SUCCESS);
        
           eResult = adi_rtc_GetCount(hDeviceRTC,&nRtc1Count);
-    DEBUG_RESULT("\n Failed to open the device",eResult,ADI_RTC_SUCCESS);
+   // DEBUG_RESULT("\n Failed to open the device",eResult,ADI_RTC_SUCCESS);
         
     eResult = adi_rtc_SetAlarm(hDeviceRTC,RTC_ALARM_OFFSET + nRtc1Count);
-    DEBUG_RESULT("\n Failed to open the device",eResult,ADI_RTC_SUCCESS);
+   // DEBUG_RESULT("\n Failed to open the device",eResult,ADI_RTC_SUCCESS);
      
         // eResult = adi_rtc_SetPreScale(hDeviceRTC,preScale);                                   //change
         
         eResult = adi_rtc_Enable(hDeviceRTC,true);
-        DEBUG_RESULT("Failed to enable the device",eResult,ADI_RTC_SUCCESS);
+       // DEBUG_RESULT("Failed to enable the device",eResult,ADI_RTC_SUCCESS);
        
     }while(0); 
     
@@ -686,13 +710,13 @@ ADI_RTC_RESULT rtc_UpdateAlarm (void) {
      /* Get current RTC count value*/
     if(ADI_RTC_SUCCESS != (eResult = adi_rtc_GetCount(hDeviceRTC,&rtcCount)))
     {
-        DEBUG_RESULT("\n Failed to open the device %04d",eResult,ADI_RTC_SUCCESS);
+       // DEBUG_RESULT("\n Failed to open the device %04d",eResult,ADI_RTC_SUCCESS);
         return(eResult);
     }
     /*Set RTC alarm at RTC_ALARM_OFFSET counts from the present RTC count value */
     if(ADI_RTC_SUCCESS != (eResult = adi_rtc_SetAlarm(hDeviceRTC,rtcCount+RTC_ALARM_OFFSET)))
     {
-        DEBUG_RESULT("\n Failed to open the device %04d",eResult,ADI_RTC_SUCCESS);
+       // DEBUG_RESULT("\n Failed to open the device %04d",eResult,ADI_RTC_SUCCESS);
         return(eResult);
     }
     return(eResult);    
