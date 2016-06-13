@@ -227,7 +227,7 @@ int main(void)
             break;
         }
       //P0.13 --> LED3
-      adi_gpio_OutputEnable(LED3, true);
+     // adi_gpio_OutputEnable(LED3, true);
       //P1.12 --> LED4 
       adi_gpio_OutputEnable(LED4, true);
       adi_gpio_OutputEnable(LED5, true);
@@ -235,15 +235,15 @@ int main(void)
       adi_gpio_OutputEnable(CO_SENSE, true);
       adi_gpio_OutputEnable(PM25_LED, true);
       adi_gpio_OutputEnable(PM25_FAN, true);
-      adi_gpio_OutputEnable(DBG_ST8_PIN, true);
-      adi_gpio_OutputEnable(DBG_ADC_PIN, true);
+      //adi_gpio_OutputEnable(DBG_ST8_PIN, true);
+      //adi_gpio_OutputEnable(DBG_ADC_PIN, true);
 
       adi_gpio_SetLow(CO_HEATER);
       adi_gpio_SetLow(CO_SENSE);
       adi_gpio_SetLow(PM25_LED);
       adi_gpio_SetLow(PM25_FAN);
-      adi_gpio_SetLow(DBG_ADC_PIN);   
-      adi_gpio_SetHigh(LED3);
+     // adi_gpio_SetLow(DBG_ADC_PIN);   
+     // adi_gpio_SetHigh(LED3);
       //adi_gpio_SetHigh(LED4);
       
       
@@ -280,14 +280,17 @@ Hibernate :
 /* RTC-0 Callback handler */
 /*This callback initializes the GPT1 timer, which controls the sensor st8-mc.*/
 void rtc0Callback (void *pCBParam, uint32_t nEvent, void *EventArg) {
-
+   
+  /* Clear RTC Interrupt status for the next RTC interrupt */
+   adi_rtc_ClearInterruptStatus(hDeviceRTC,ADI_RTC_ALARM_INT);
+    
     adi_gpio_Toggle(ADI_GPIO_PORT1, ADI_GPIO_PIN_12);  
   
   
     /* flagHib is set to 'true' in adi_pwr_ExitLowPowerMode() to exit hibernate mode */
     flagHib = true;
     pwrResult = adi_pwr_ExitLowPowerMode(&flagHib);  
-    __DSB();
+  
     //DEBUG_RESULT("\n Failed to exit hibernate %04d",pwrResult,ADI_PWR_SUCCESS);
    
     k = 0;
@@ -311,11 +314,12 @@ void rtc0Callback (void *pCBParam, uint32_t nEvent, void *EventArg) {
         cnt_fan_cycles       = 0;
         cnt_co_heater_cycles = 0;
         
-        
+        /* Update RTC alarm */
+           rtc_UpdateAlarm();
 
 	/*Initialize debug pins to 0*/
-        adi_gpio_SetLow(DBG_ST8_PIN);
-        adi_gpio_SetLow(DBG_ADC_PIN);
+        //adi_gpio_SetLow(DBG_ST8_PIN);
+        //di_gpio_SetLow(DBG_ADC_PIN);
         
 	/*kick-start sensor st8-mc*/
         adi_tmr_SetLoadValue( hDevice1, GPT1_LOAD_500MSEC);
@@ -351,7 +355,7 @@ static void GPTimer1Callback(void *pCBParam, uint32_t Event, void *pArg)
              {
                curr_state = 10;//go to PM2.5 sensor - begin by turning on the fan [st8 10]
                cnt_samples = 0;
-               adi_gpio_SetHigh(LED3);
+               //adi_gpio_SetHigh(LED3);
                //adi_gpio_SetHigh(LED4);
                
 	       adi_gpio_SetLow(CO_HEATER);
@@ -366,8 +370,8 @@ static void GPTimer1Callback(void *pCBParam, uint32_t Event, void *pArg)
             {
               adi_gpio_SetHigh(CO_HEATER);
               
-	      adi_gpio_SetLow(LED3);
-              adi_gpio_Toggle(DBG_ST8_PIN);
+	     //adi_gpio_SetLow(LED3);
+              //adi_gpio_Toggle(DBG_ST8_PIN);
 
               /*Wait until 2 heater-cycles of 490 ms are done - i.e., wait for heater to be ON for 980 ms as per sensor spec.
 	        (limitation of GPT1 clock frequency - cannot count 980 ms in one go)*/
@@ -388,7 +392,7 @@ static void GPTimer1Callback(void *pCBParam, uint32_t Event, void *pArg)
        /* st8 1 : CO sensor - sense circuit ON for 2.5 ms*/	
        case 1 :
                adi_gpio_SetHigh(CO_SENSE);
-               adi_gpio_Toggle(DBG_ST8_PIN);
+               //adi_gpio_Toggle(DBG_ST8_PIN);
                                               
                curr_state = 2;
                adi_tmr_SetLoadValue( hDevice1, GPT1_LOAD_2p5MSEC);    
@@ -399,8 +403,8 @@ static void GPTimer1Callback(void *pCBParam, uint32_t Event, void *pArg)
        /* st8 2 : CO sensor - trigger ADC sampling on channel-2 */	
        case 2 :
          
-             adi_gpio_Toggle(DBG_ST8_PIN);
-             adi_gpio_SetHigh(DBG_ADC_PIN);
+            // adi_gpio_Toggle(DBG_ST8_PIN);
+             //adi_gpio_SetHigh(DBG_ADC_PIN);
              //adi_gpio_SetLow(LED4);
              
                                          //adi_gpio_Toggle(LED5);
@@ -416,8 +420,8 @@ static void GPTimer1Callback(void *pCBParam, uint32_t Event, void *pArg)
              adi_gpio_SetLow(CO_HEATER);
              adi_gpio_SetLow(CO_SENSE);
              
-             adi_gpio_SetHigh(LED3);
-             adi_gpio_Toggle(DBG_ST8_PIN);
+             //adi_gpio_SetHigh(LED3);
+            // adi_gpio_Toggle(DBG_ST8_PIN);
              
              cnt_co_heater_cycles = 0;
              curr_state = 0;
@@ -456,17 +460,15 @@ static void GPTimer1Callback(void *pCBParam, uint32_t Event, void *pArg)
                adi_gpio_SetLow(PM25_LED);
                adi_gpio_SetLow(PM25_FAN);
                k=1;
-               /* Update RTC alarm */
-                rtc_UpdateAlarm();
-                adi_rtc_ClearInterruptStatus(hDeviceRTC,ADI_RTC_ALARM_INT);
+               
                //cnt_samples = 0;                                                              //change
              }
             else
             {
               adi_gpio_SetHigh(PM25_LED);
               
-	      adi_gpio_SetLow(LED3);
-              adi_gpio_Toggle(DBG_ST8_PIN);
+	     // adi_gpio_SetLow(LED3);
+             // adi_gpio_Toggle(DBG_ST8_PIN);
 
               curr_state      = 5;
               adi_tmr_SetLoadValue( hDevice1, GPT1_LOAD_0p28MSEC);
@@ -477,8 +479,8 @@ static void GPTimer1Callback(void *pCBParam, uint32_t Event, void *pArg)
 	/*st8 5: PM2.5 sensor - trigger ADC sampling on channel-3 */	
         case 5 :
           
-             adi_gpio_Toggle(DBG_ST8_PIN);
-             adi_gpio_SetHigh(DBG_ADC_PIN);
+            // adi_gpio_Toggle(DBG_ST8_PIN);
+            // adi_gpio_SetHigh(DBG_ADC_PIN);
              
                                              
              cnt_samples++;
@@ -491,9 +493,9 @@ static void GPTimer1Callback(void *pCBParam, uint32_t Event, void *pArg)
 	/*st8 6: PM2.5 sensor - LED OFF, wait for 9.68 ms before next PM2.5 measurement */	
         case 6 :
              adi_gpio_SetLow(PM25_LED);
-             
-             adi_gpio_SetHigh(LED3);
-             adi_gpio_Toggle(DBG_ST8_PIN);
+                  
+            // adi_gpio_SetHigh(LED3);
+            // adi_gpio_Toggle(DBG_ST8_PIN);
 
              curr_state = 4;  
              adi_tmr_SetLoadValue( hDevice1, GPT1_LOAD_9p68MSEC);
