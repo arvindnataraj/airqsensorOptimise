@@ -167,10 +167,12 @@ uint32_t PAGE_ADDR = 0x8000;
 #define BUFF_SIZE                (8)
 
 uint32_t nStartPage, nEndPage; 
-static uint8_t Memory[ADI_FEE_MEMORY_SIZE];
-static uint8_t writeBuffer[BUFF_SIZE];
+static uint16_t Memory[ADI_FEE_MEMORY_SIZE];
+static uint16_t writeBuffer[BUFF_SIZE];
 
 int adcInit = 0;
+int fwCnt = 0;
+//int tempo = 3000;
 /* Flash controller  Return code */
     ADI_FEE_RESULT fResult = ADI_FEE_SUCCESS;
 
@@ -223,6 +225,7 @@ int main(void)
       }
       if (ADI_PWR_SUCCESS != adi_pwr_SetClockDivider(ADI_CLOCK_PCLK,1))
       {
+        
           //DEBUG_MESSAGE("Failed to intialize the power service\n");
       }
 
@@ -240,8 +243,8 @@ int main(void)
             break;
         }
       
-      adi_gpio_OutputEnable(LED4, true);
-      adi_gpio_OutputEnable(LED5, true);
+     // adi_gpio_OutputEnable(LED4, true);
+    //  adi_gpio_OutputEnable(LED5, true);
       adi_gpio_OutputEnable(CO_HEATER, true);
       adi_gpio_OutputEnable(CO_SENSE, true);
       adi_gpio_OutputEnable(PM25_LED, true);
@@ -286,7 +289,7 @@ Hibernate :
        tmpBuff=0;  
        adcInit=0;
        flash_write();
-       PAGE_ADDR += BUFF_SIZE;
+       PAGE_ADDR += (BUFF_SIZE*2);
    /* Once one cycle of measurements completes - jumps to label 'Hibernate' to switch to hibernate mode till next RTC alarm */
       goto Hibernate;
      } 
@@ -314,7 +317,7 @@ void rtc0Callback (void *pCBParam, uint32_t nEvent, void *EventArg) {
     adi_rtc_ClearInterruptStatus(hDeviceRTC,ADI_RTC_ALARM_INT);
   
     /* LED4 TOGGLE - CHECK FOR RTC INTERRUPTS */
-    adi_gpio_Toggle(LED4);  
+    //adi_gpio_Toggle(LED4);  
   
     /* flagHib is set to 'true' in adi_pwr_ExitLowPowerMode() to exit hibernate mode */
     pwrResult = adi_pwr_ExitLowPowerMode(&flagHib);   
@@ -532,8 +535,10 @@ static void ADCCallback(void *pCBParam, uint32_t Event, void *pArg)
             if(adcInit!=0)
             {
               do{   
-             //DEBUG_MESSAGE("%d,%d\n",cnt_samples,ADC_DataBuffer[tmp]);
+             //DEBUG_MESSAGE("%d\n",ADC_DataBuffer[tmp]);
              writeBuffer[tmpBuff] = ADC_DataBuffer[tmp];
+            // writeBuffer[tmpBuff] = tempo;
+             //tempo++;
              tmp++;
              tmpBuff++;
              }while(tmp<4);
@@ -690,11 +695,14 @@ ADI_RTC_RESULT rtc_Init (void) {
 
 void flash_write()
 {
-  
+   fwCnt++;
    /* Open Flash Controller Device */
     fResult = adi_fee_Open(FEE_DEV_NUM, Memory, sizeof(Memory), &hDeviceFlash);
     //DEBUG_RESULT("Failed to open I2C Master device",fResult,ADI_FEE_SUCCESS);
-  
+  if((fwCnt>128)||(fwCnt==1))
+  {
+    fwCnt = 1;
+    
     /* Get the start page */
     fResult = adi_fee_GetPageNumber(hDeviceFlash, PAGE_ADDR, &nStartPage);
   //  DEBUG_RESULT("Failed to execute adi_fee_GetPageNumber",fResult,ADI_FEE_SUCCESS);
@@ -705,15 +713,15 @@ void flash_write()
 
     /* Clear the Pages */
     fResult = adi_fee_PageErase (hDeviceFlash, nStartPage, nEndPage);
-   // DEBUG_RESULT("Failed to execute adi_fee_PageErase",fResult,ADI_FEE_SUCCESS);
-
+    //DEBUG_RESULT("Failed to execute adi_fee_PageErase",fResult,ADI_FEE_SUCCESS);
+  }
     /* Submit a buffer for writing */
     fResult =  adi_fee_SubmitTxBuffer (hDeviceFlash, PAGE_ADDR, writeBuffer, sizeof(writeBuffer));
    // DEBUG_RESULT("Failed to Submit the Buffer",fResult,ADI_FEE_SUCCESS);
 
    /* Close the flash controller */
     fResult = adi_fee_Close(hDeviceFlash);
-    DEBUG_RESULT("Failed to close the flash device",fResult,ADI_FEE_SUCCESS);
+    //DEBUG_RESULT("Failed to close the flash device",fResult,ADI_FEE_SUCCESS);
     
     /* Verify the transfer */
      VerifyBuffers();
@@ -721,10 +729,11 @@ void flash_write()
 /* LED5 toggles if there is a mismatch in the SENSOR DATA and the data written to FLASH */
 static void VerifyBuffers (void)
 {
-    uint8_t* pDataInFlash = (uint8_t*)PAGE_ADDR;
+    uint16_t* pDataInFlash = (uint16_t*)PAGE_ADDR;
     for (int x=0; x < BUFF_SIZE; x++) {
+      //DEBUG_MESSAGE("%d",pDataInFlash[x]);
         if (writeBuffer[x] != pDataInFlash[x]){
-          adi_gpio_Toggle(LED5); 
+         // adi_gpio_Toggle(LED5); 
          // DEBUG_MESSAGE("%d\n",x);
             return;
         }
