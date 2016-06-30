@@ -103,25 +103,27 @@ ADI_ADC_RESULT adcResult;
 #define LED4         ADI_GPIO_PORT1, ADI_GPIO_PIN_12
 #define LED5         ADI_GPIO_PORT1, ADI_GPIO_PIN_13
 
+
 /*EZKIT*/
 /*CO sensor heater control: P2.0 / J9-7*/
-#define CO_HEATER    ADI_GPIO_PORT2, ADI_GPIO_PIN_0
+//#define CO_HEATER    ADI_GPIO_PORT2, ADI_GPIO_PIN_0
 /*CO sensor sense control: P2.2 / J9-6*/
-#define CO_SENSE     ADI_GPIO_PORT2, ADI_GPIO_PIN_2
+//#define CO_SENSE     ADI_GPIO_PORT2, ADI_GPIO_PIN_2
 /*PM2.5 sensor LED control: P0.15 / J9-3*/
-#define PM25_LED     ADI_GPIO_PORT0, ADI_GPIO_PIN_15
+//#define PM25_LED     ADI_GPIO_PORT0, ADI_GPIO_PIN_15
 /*PM2.5 sensor FAN control: P2.11 / J9-4*/
-#define PM25_FAN     ADI_GPIO_PORT2, ADI_GPIO_PIN_11
+//#define PM25_FAN     ADI_GPIO_PORT2, ADI_GPIO_PIN_11
+
 
 /*PCB*/
-///*CO sensor heater control: P1.7*/
-//#define CO_HEATER    ADI_GPIO_PORT1, ADI_GPIO_PIN_7
-///*CO sensor sense control: P1.6*/
-//#define CO_SENSE     ADI_GPIO_PORT1, ADI_GPIO_PIN_6
-///*PM2.5 sensor LED control: P2.9*/
-//#define PM25_LED     ADI_GPIO_PORT2, ADI_GPIO_PIN_9
-//*PM2.5 sensor FAN control: P1.8*/
-//#define PM25_FAN     ADI_GPIO_PORT1, ADI_GPIO_PIN_8
+/*CO sensor heater control: P1.7*/
+#define CO_HEATER    ADI_GPIO_PORT1, ADI_GPIO_PIN_7
+/*CO sensor sense control: P1.6*/
+#define CO_SENSE     ADI_GPIO_PORT1, ADI_GPIO_PIN_6
+/*PM2.5 sensor LED control: P2.9*/
+#define PM25_LED     ADI_GPIO_PORT2, ADI_GPIO_PIN_9
+/*PM2.5 sensor FAN control: P1.8*/
+#define PM25_FAN     ADI_GPIO_PORT1, ADI_GPIO_PIN_8
 
 static uint8_t curr_state;
 static uint8_t cnt_samples;
@@ -147,7 +149,9 @@ bool_t flagHib = false;
 
 ADI_ADC_RESULT  adcResult = ADI_ADC_SUCCESS;
 ADI_ADC_BUFFER Buffer;
-    
+
+void enterActiveMode (void);
+
 int main(void)
 {
     /* Clock initialization */
@@ -155,6 +159,9 @@ int main(void)
     
     /* test system initialization */
     test_Init();
+    
+    /* Enter Active mode for enabling Buck conveter - optimise active current */
+    enterActiveMode();
     
   /* Number of 500ms cycles equals ratio of given fanOnTime to 0.5 */     
     NUM_FAN_500MS_CYCLES = fanOnTime/0.5;   
@@ -211,8 +218,8 @@ int main(void)
             break;
         }
       
-      adi_gpio_OutputEnable(LED4, true);
-      adi_gpio_OutputEnable(LED5, true);
+      //adi_gpio_OutputEnable(LED4, true);
+      //adi_gpio_OutputEnable(LED5, true);
       adi_gpio_OutputEnable(CO_HEATER, true);
       adi_gpio_OutputEnable(CO_SENSE, true);
       adi_gpio_OutputEnable(PM25_LED, true);
@@ -262,6 +269,16 @@ Hibernate :
     
  
 }
+void enterActiveMode()
+{
+  /*    SWITCHED TO LOW POWER MODE - ACTIVE MODE    */
+  pwrResult = adi_pwr_EnterLowPowerMode(ADI_PWR_MODE_ACTIVE,NULL,0x00);  
+  DEBUG_RESULT("\n Failed to enter active mode %04d",pwrResult,ADI_PWR_SUCCESS);
+  
+  /*    BUCK CONVERTER ENABLED TO REDUCE POWER      */
+  adi_pwr_EnableHPBuck(true); 
+}
+
 /* RTC-0 Callback handler */
 /*This callback initializes the GPT1 timer, which controls the sensor st8-mc.*/
 void rtc0Callback (void *pCBParam, uint32_t nEvent, void *EventArg) {
@@ -270,11 +287,13 @@ void rtc0Callback (void *pCBParam, uint32_t nEvent, void *EventArg) {
     adi_rtc_ClearInterruptStatus(hDeviceRTC,ADI_RTC_ALARM_INT);
   
     /* LED4 TOGGLE - CHECK FOR RTC INTERRUPTS */
-    adi_gpio_Toggle(LED4);  
-  
+   // adi_gpio_Toggle(LED4);  
   
     /* flagHib is set to 'true' in adi_pwr_ExitLowPowerMode() to exit hibernate mode */
-    pwrResult = adi_pwr_ExitLowPowerMode(&flagHib);              
+    pwrResult = adi_pwr_ExitLowPowerMode(&flagHib);   
+    
+    /* Enter Active mode for enabling Buck conveter - optimise active current */
+    enterActiveMode();
    
   /* Components of ADC are powered down in hibernate mode - so must be explicitly powered up after waking up*/
     if(pwrResult==ADI_PWR_SUCCESS)
@@ -485,7 +504,7 @@ static void ADCCallback(void *pCBParam, uint32_t Event, void *pArg)
     case ADI_ADC_EVENT_BUFFER_PROCESSED:
              tmp=0;
              do{   
-             //DEBUG_MESSAGE("%d,%d\n",cnt_samples,ADC_DataBuffer[tmp]);
+             DEBUG_MESSAGE("%d,%d\n",cnt_samples,ADC_DataBuffer[tmp]);
              tmp++;
              }while(tmp<4);
              cnt_samples++;
@@ -641,7 +660,7 @@ ADI_RTC_RESULT rtc_UpdateAlarm (void) {
     uint32_t rtcCount;
     
      /* LED TOGGLE : CHECK FOR RTC ALARM UPDATE */
-    adi_gpio_Toggle(LED5); 
+    //adi_gpio_Toggle(LED5); 
     
      /* Get current RTC count value*/
     eResult = adi_rtc_GetCount(hDeviceRTC,&rtcCount);
