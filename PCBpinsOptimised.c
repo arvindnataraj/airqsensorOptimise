@@ -42,7 +42,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 
 *****************************************************************************/
-
+//P0 03 - PCB LED
 
 #include <stdint.h>
 #include <stdio.h>
@@ -124,6 +124,7 @@ ADI_ADC_RESULT adcResult;
 #define PM25_LED     ADI_GPIO_PORT2, ADI_GPIO_PIN_9
 /*PM2.5 sensor FAN control: P1.8*/
 #define PM25_FAN     ADI_GPIO_PORT1, ADI_GPIO_PIN_8
+#define EN_5V        ADI_GPIO_PORT1, ADI_GPIO_PIN_14
 
 static uint8_t curr_state;
 static uint8_t cnt_samples;
@@ -224,11 +225,13 @@ int main(void)
       adi_gpio_OutputEnable(CO_SENSE, true);
       adi_gpio_OutputEnable(PM25_LED, true);
       adi_gpio_OutputEnable(PM25_FAN, true);
-     
+      adi_gpio_OutputEnable(EN_5V, true);
+      
       adi_gpio_SetLow(CO_HEATER);
       adi_gpio_SetLow(CO_SENSE);
       adi_gpio_SetLow(PM25_LED);
       adi_gpio_SetLow(PM25_FAN);
+      adi_gpio_SetLow(EN_5V);
       
       ADC_Setup();
       
@@ -273,7 +276,7 @@ void enterActiveMode()
 {
   /*    SWITCHED TO LOW POWER MODE - ACTIVE MODE    */
   pwrResult = adi_pwr_EnterLowPowerMode(ADI_PWR_MODE_ACTIVE,NULL,0x00);  
-  DEBUG_RESULT("\n Failed to enter active mode %04d",pwrResult,ADI_PWR_SUCCESS);
+  //DEBUG_RESULT("\n Failed to enter active mode %04d",pwrResult,ADI_PWR_SUCCESS);
   
   /*    BUCK CONVERTER ENABLED TO REDUCE POWER      */
   adi_pwr_EnableHPBuck(true); 
@@ -289,6 +292,8 @@ void rtc0Callback (void *pCBParam, uint32_t nEvent, void *EventArg) {
     /* LED4 TOGGLE - CHECK FOR RTC INTERRUPTS */
    // adi_gpio_Toggle(LED4);  
   
+    
+    
     /* flagHib is set to 'true' in adi_pwr_ExitLowPowerMode() to exit hibernate mode */
     pwrResult = adi_pwr_ExitLowPowerMode(&flagHib);   
     
@@ -317,7 +322,9 @@ void rtc0Callback (void *pCBParam, uint32_t nEvent, void *EventArg) {
         
         /* Update RTC alarm */
            rtc_UpdateAlarm();
-
+        
+        adi_gpio_SetHigh(EN_5V);
+        
 	/*kick-start sensor st8-mc*/
         adi_tmr_SetLoadValue( hDevice1, GPT1_LOAD_500MSEC);
         adi_tmr_Enable(hDevice1, true);
@@ -350,7 +357,7 @@ static void GPTimer1Callback(void *pCBParam, uint32_t Event, void *pArg)
               
 	       adi_gpio_SetLow(CO_HEATER);
                adi_gpio_SetLow(CO_SENSE);
-
+                 
                adi_gpio_SetHigh(PM25_FAN);
                adi_tmr_SetLoadValue( hDevice1, GPT1_LOAD_500MSEC);
                adi_tmr_Enable(hDevice1,true); 
@@ -442,6 +449,7 @@ static void GPTimer1Callback(void *pCBParam, uint32_t Event, void *pArg)
                adi_tmr_Enable(hDevice1, false);
                adi_gpio_SetLow(PM25_LED);
                adi_gpio_SetLow(PM25_FAN);
+               adi_gpio_SetLow(EN_5V);
                k=1;                                           
              }
             else
@@ -504,7 +512,7 @@ static void ADCCallback(void *pCBParam, uint32_t Event, void *pArg)
     case ADI_ADC_EVENT_BUFFER_PROCESSED:
              tmp=0;
              do{   
-             DEBUG_MESSAGE("%d,%d\n",cnt_samples,ADC_DataBuffer[tmp]);
+             //DEBUG_MESSAGE("%d,%d\n",cnt_samples,ADC_DataBuffer[tmp]);
              tmp++;
              }while(tmp<4);
              cnt_samples++;
